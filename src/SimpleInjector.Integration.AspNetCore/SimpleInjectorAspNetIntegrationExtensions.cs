@@ -4,10 +4,14 @@
 namespace SimpleInjector
 {
     using System;
+    using System.Diagnostics.CodeAnalysis;
     using Integration.AspNetCore;
     using Microsoft.AspNetCore.Builder;
     using Microsoft.AspNetCore.Hosting;
     using Microsoft.AspNetCore.Http;
+#if NET7_0_OR_GREATER
+    using Microsoft.AspNetCore.Routing;
+#endif
     using Microsoft.Extensions.DependencyInjection;
     using SimpleInjector.Lifestyles;
 
@@ -148,6 +152,74 @@ namespace SimpleInjector
 
             return app;
         }
+
+#if NET7_0_OR_GREATER
+        /// <summary>
+        /// Registers a filter of type <typeparamref name="TFilterType"/> onto the route handler. The filter will be
+        /// resolved from the supplied Simple Injector <paramref name="container"/>. The filter will be added to the
+        /// container for verification.
+        /// </summary>
+        /// <typeparam name="TFilterType">The type of the <see cref="IEndpointFilter"/> to register.</typeparam>
+        /// <param name="builder">The <see cref="RouteHandlerBuilder"/> to add the filter to.</param>
+        /// <param name="container">The container to resolve <typeparamref name="TFilterType"/> from.</param>
+        /// <returns>A <see cref="RouteHandlerBuilder"/> that can be used to further customize the route handler.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when one of the arguments is a null reference.</exception>
+        public static RouteHandlerBuilder AddEndpointFilter<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TFilterType>(
+            this RouteHandlerBuilder builder,
+            Container container
+        ) where TFilterType : IEndpointFilter
+        {
+            // We have a RouteHandlerBuilder and RouteGroupBuilder-specific AddFilter methods for convenience so you
+            // don't have to specify both arguments most the time.
+            return builder.AddEndpointFilter<RouteHandlerBuilder, TFilterType>(container);
+        }
+
+        /// <summary>
+        /// Registers a filter of type <typeparamref name="TFilterType"/> onto the route group. The filter will be
+        /// resolved from the supplied Simple Injector <paramref name="container"/>. The filter will be added to the
+        /// container for verification.
+        /// </summary>
+        /// <typeparam name="TFilterType">The type of the <see cref="IEndpointFilter"/> to register.</typeparam>
+        /// <param name="builder">The <see cref="RouteGroupBuilder"/> to add the filter to.</param>
+        /// <param name="container">The container to resolve <typeparamref name="TFilterType"/> from.</param>
+        /// <returns>A <see cref="RouteGroupBuilder"/> that can be used to further customize the route group.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when one of the arguments is a null reference.</exception>
+        public static RouteGroupBuilder AddEndpointFilter<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TFilterType>(
+            this RouteGroupBuilder builder,
+            Container container)
+            where TFilterType : IEndpointFilter
+        {
+            // We have a RouteHandlerBuilder and RouteGroupBuilder-specific AddFilter methods for convenience so you
+            // don't have to specify both arguments most the time.
+            return builder.AddEndpointFilter<RouteGroupBuilder, TFilterType>(container);
+        }
+
+        /// <summary>
+        /// Registers a filter of type <typeparamref name="TFilterType"/> onto the endpoint. The filter will be
+        /// resolved from the supplied Simple Injector <paramref name="container"/>. The filter will be added to the
+        /// container for verification.
+        /// </summary>
+        /// <typeparam name="TBuilder">The type of the <see cref="IEndpointConventionBuilder"/>.</typeparam>
+        /// <typeparam name="TFilterType">The type of the <see cref="IEndpointFilter"/> to register.</typeparam>
+        /// <param name="builder">The <see cref="IEndpointConventionBuilder"/> to add the filter to.</param>
+        /// <param name="container">The container to resolve <typeparamref name="TFilterType"/> from.</param>
+        /// <returns>A <typeparamref name="TBuilder"/> that can be used to further customize the endpoint.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when one of the arguments is a null reference.</exception>
+        public static TBuilder AddEndpointFilter<TBuilder, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TFilterType>(
+            this TBuilder builder,
+            Container container)
+            where TBuilder : IEndpointConventionBuilder
+            where TFilterType : IEndpointFilter
+        {
+            Requires.IsNotNull(builder, nameof(builder));
+            Requires.IsNotNull(container, nameof(container));
+
+            // Follows the same pattern of creating InstanceProducer upfront as is used in UseMiddlewareInternal.
+            var endpointType = typeof(TFilterType);
+            var producer = container.Options.LifestyleSelectionBehavior.SelectLifestyle(endpointType).CreateProducer<IEndpointFilter>(endpointType, container);
+            return builder.AddEndpointFilter((context, next) => producer.GetInstance().InvokeAsync(context, next));
+        }
+#endif
 
         private static IServiceProvider GetApplicationServices(this IApplicationBuilder builder)
         {
